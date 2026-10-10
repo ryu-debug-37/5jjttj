@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#24245c">
+<title>Hoshi Quest: Sky Adventure</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#252b67;font-family:system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none;overscroll-behavior:none}canvas{display:block;width:100%;height:100%;touch-action:none}#hud{position:fixed;z-index:2;inset:calc(9px + env(safe-area-inset-top)) 10px auto;display:flex;align-items:center;justify-content:space-between;gap:6px;pointer-events:none}.badge{padding:7px 10px;border:1px solid #ffffff55;border-radius:13px;background:#19183dbd;color:#fff;font-size:12px;font-weight:850;text-shadow:0 2px #33275d;box-shadow:0 3px 10px #25204435}.badge.logo{color:#ffe7a7}#controls{position:fixed;z-index:3;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom));padding:0 17px;display:flex;justify-content:space-between;align-items:flex-end;pointer-events:none}.group{display:flex;gap:11px}.ctrl{pointer-events:auto;display:grid;place-items:center;width:64px;height:64px;border-radius:21px;border:2px solid #fff9;background:#29275fbf;color:#fff;font-size:25px;font-weight:900;box-shadow:0 5px 0 #17183c77;user-select:none;-webkit-user-select:none;touch-action:none;outline:none}.ctrl:active,.ctrl.pressed{transform:translateY(3px);background:#7262cfe8;box-shadow:0 2px 0 #17183c77}#jump{width:75px;height:75px;background:#e968b8ce}#overlay{position:fixed;z-index:5;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;background:#11153892;backdrop-filter:blur(5px)}.panel{width:min(430px,100%);max-height:92dvh;overflow:auto;text-align:center;padding:22px 20px 20px;border:2px solid #e0d8ff9c;border-radius:27px;background:linear-gradient(145deg,#393a80f7,#191a43f8);box-shadow:0 18px 60px #080a2d88}.art{font-size:38px;letter-spacing:5px;margin-bottom:2px}h1{margin:0 0 7px;color:#ffe7aa;font-size:clamp(25px,7vw,38px);line-height:1.1;text-shadow:0 3px #9259a6}.subtitle{font-weight:800;color:#f6b8e0;margin:5px 0 12px;font-size:13px;letter-spacing:2px}.desc{font-size:14px;line-height:1.55;color:#e8e7ff;margin:0 auto 17px;max-width:340px}.mainbtn{padding:13px 22px;border:0;border-radius:15px;background:linear-gradient(100deg,#ff83c4,#8e88ff);color:white;font-weight:900;font-size:16px;box-shadow:0 4px 0 #4a3879}.mainbtn:active{transform:translateY(2px);box-shadow:0 2px 0 #4a3879}.hint{font-size:11px;color:#c4c8f6;margin:14px 0 0}.hidden{display:none!important}@media(min-width:700px){.ctrl{width:72px;height:72px}.badge{font-size:13px;padding:9px 13px}}@media(max-height:450px){.ctrl{width:53px;height:53px;border-radius:16px}#jump{width:61px;height:61px}.panel{padding:13px 18px}.art{font-size:27px}.desc{margin-bottom:10px}.hint{margin-top:8px}}
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Hoshi Quest platformer"></canvas>
+<div id="hud"><div class="badge logo">🌸 HOSHI QUEST</div><div class="badge" id="coinCount">🪙 0 / 20</div><div class="badge" id="lifeCount">💖 3</div></div>
+<div id="controls"><div class="group"><button class="ctrl" id="left" aria-label="Bergerak ke kiri">◀</button><button class="ctrl" id="right" aria-label="Bergerak ke kanan">▶</button></div><button class="ctrl" id="jump" aria-label="Lompat">⬆</button></div>
+<div id="overlay"><section class="panel"><div class="art">🌸 ✨ 🌙</div><h1 id="panelTitle">Hoshi Quest</h1><div class="subtitle">SKY ADVENTURE</div><p class="desc" id="panelText">Jelajahi pulau-pulau di langit, kumpulkan koin bintang, dan hindari monster awan. Bisakah kamu mencapai gerbang ajaib?</p><button class="mainbtn" id="startBtn">MULAI PETUALANGAN ▶</button><p class="hint">◀ ▶ Bergerak &nbsp; · &nbsp; ⬆ Melompat<br>Tips: injak monster dari atas untuk mengalahkannya!</p></section></div>
+<script>
+(()=>{'use strict';
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const overlay=document.getElementById('overlay'),panelTitle=document.getElementById('panelTitle'),panelText=document.getElementById('panelText'),startBtn=document.getElementById('startBtn'),coinCount=document.getElementById('coinCount'),lifeCount=document.getElementById('lifeCount');
+let W=innerWidth,H=innerHeight,DPR=1,clock=0,lastTime=0,camera=0,score=0,lives=3,running=false,finished=false,checkpoint=70,jumpQueued=false;
+const keys={left:false,right:false};
+function resize(){W=innerWidth;H=innerHeight;DPR=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener('resize',resize);resize();
+const WORLD=2940,GROUND=0;
+const platforms=[
+ {x:0,lift:0,w:475},{x:555,lift:72,w:170},{x:800,lift:132,w:160},
+ {x:1025,lift:62,w:195},{x:1300,lift:117,w:175},{x:1540,lift:0,w:370},
+ {x:1635,lift:88,w:145},{x:1905,lift:145,w:165},{x:2140,lift:72,w:205},{x:2390,lift:0,w:550}
+];
+const coinDefs=[
+ [130,0],[220,0],[335,0],[410,0],[600,72],[665,72],[835,132],[905,132],
+ [1060,62],[1145,62],[1340,117],[1410,117],[1585,0],[1665,88],[1730,88],
+ [1940,145],[2010,145],[2190,72],[2290,72],[2500,0]
+];
+let coins=coinDefs.map(([x,lift])=>({x,lift,taken:false,phase:Math.random()*6}));
+const enemyDefs=[{x:350,min:285,max:430,lift:0},{x:850,min:815,max:935,lift:132},{x:1690,min:1645,max:1750,lift:88},{x:2220,min:2170,max:2305,lift:72}];
+let enemies=[];
+const player={x:65,y:0,w:28,h:43,vx:0,vy:0,grounded:false,face:1,invuln:0};
+const goal={x:2820};
+function groundY(){return H-78}
+function platY(p){return groundY()-p.lift}
+function updateHUD(){coinCount.textContent='🪙 '+score+' / '+coins.length;lifeCount.textContent='💖 '+lives}
+function restart(){score=0;lives=3;camera=0;checkpoint=65;clock=0;coins.forEach(c=>c.taken=false);enemies=enemyDefs.map(e=>({...e,alive:true,dir:1}));player.x=65;player.y=groundY()-player.h;player.vx=0;player.vy=0;player.grounded=true;player.invuln=0;finished=false;running=true;jumpQueued=false;keys.left=keys.right=false;overlay.classList.add('hidden');updateHUD()}
+function showPanel(title,text,button){running=false;finished=true;panelTitle.textContent=title;panelText.textContent=text;startBtn.textContent=button;overlay.classList.remove('hidden')}
+startBtn.addEventListener('click',()=>restart());
+function rect(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(x,y,w,h)}
+function roundRect(x,y,w,h,r,color){ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill()}
+function ellipse(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.fill()}
+function drawBackground(){
+ let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#414eaa');g.addColorStop(.52,'#99aaf0');g.addColorStop(1,'#ffd2e4');rect(0,0,W,H,g);
+ // tiny twinkling stars
+ for(let i=0;i<55;i++){let x=((i*149-camera*.10)%(W+30)+W+30)%(W+30),y=(i*67)%(Math.max(110,H*.67));ctx.globalAlpha=.35+.4*Math.sin(clock*2+i);ellipse(x,y,1+(i%2),1+(i%2),'#fff7df')}ctx.globalAlpha=1;
+ // dreamy distant hills
+ for(let i=-1;i<8;i++){const x=i*180-(camera*.16%180);ctx.fillStyle='#c6c6ef';ctx.beginPath();ctx.ellipse(x,H-54,125,70,0,Math.PI,Math.PI*2);ctx.fill();ctx.fillStyle='#efc7e9';ctx.beginPath();ctx.ellipse(x+70,H-43,105,49,0,Math.PI,Math.PI*2);ctx.fill()}
+ // drifting clouds
+ for(let i=0;i<10;i++){let x=((i*177-camera*.23+clock*7)%(W+130)+W+130)%(W+130)-60,y=H*.17+(i*79)%(Math.max(120,H*.43));ctx.fillStyle='#ffffff9e';ctx.beginPath();ctx.arc(x,y,17,0,Math.PI*2);ctx.arc(x+21,y-8,21,0,Math.PI*2);ctx.arc(x+44,y,16,0,Math.PI*2);ctx.fill()}
+}
+function drawPlatform(p){const x=p.x-camera,y=platY(p),h=p.lift===0?170:19;if(x+p.w<-10||x>W+10)return;roundRect(x,y,p.w,h,6,'#594782');roundRect(x,y,p.w,9,5,'#70d9b8');rect(x+5,y+12,p.w-10,3,'#a9f4d8');if(h>30){for(let bx=x+13;bx<x+p.w-7;bx+=29)rect(bx,y+24,3,Math.min(18,h-24),'#8067aa')}}
+function drawCoin(c){if(c.taken)return;const x=c.x-camera,y=groundY()-c.lift-27+Math.sin(clock*4+c.phase)*3;if(x<-20||x>W+20)return;ctx.save();ctx.translate(x,y);ctx.rotate(Math.sin(clock*3+c.phase)*.13);ctx.fillStyle='#ffca59';ctx.strokeStyle='#fff0ae';ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(0,0,8,11,0,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#fff9d7';ctx.font='bold 12px sans-serif';ctx.textAlign='center';ctx.fillText('✦',0,4);ctx.restore()}
+function drawEnemy(e){if(!e.alive)return;const x=e.x-camera,y=groundY()-e.lift-29+Math.sin(clock*6+e.x)*2;if(x<-40||x>W+40)return;ellipse(x,y+29,18,4,'#3c367255');ellipse(x,y,16,16,'#a674e7');ctx.strokeStyle='#f4dfff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,15,0,Math.PI*2);ctx.stroke();ellipse(x-5,y-2,3.4,4.2,'white');ellipse(x+5,y-2,3.4,4.2,'white');ellipse(x-4,y-1,1.6,2.4,'#34254c');ellipse(x+6,y-1,1.6,2.4,'#34254c');ctx.strokeStyle='#56305c';ctx.beginPath();ctx.arc(x,y+4,4,0,Math.PI);ctx.stroke();ctx.fillStyle='#ffc0e6';ctx.beginPath();ctx.arc(x-10,y+4,3,0,Math.PI*2);ctx.arc(x+10,y+4,3,0,Math.PI*2);ctx.fill()}
+function drawPlayer(){if(player.invuln>0&&Math.floor(clock*15)%2===0)return;const x=player.x-camera+player.w/2,y=player.y;ctx.save();ctx.translate(x,y);ctx.scale(player.face,1);
+ // flowing anime scarf
+ ctx.fillStyle='#ff95c9';ctx.beginPath();ctx.moveTo(-8,21);ctx.lineTo(-20,26+Math.sin(clock*12)*3);ctx.lineTo(-10,31);ctx.lineTo(3,23);ctx.fill();
+ // legs and boots
+ rect(-9,34,7,7,'#343963');rect(3,34,7,7,'#343963');roundRect(-11,39,10,5,2,'#ffde9b');roundRect(2,39,11,5,2,'#ffde9b');
+ // hair silhouette
+ ellipse(0,10,15,16,'#49316f');rect(-14,9,6,16,'#49316f');rect(8,10,6,14,'#49316f');
+ // face
+ ellipse(0,11,11,13,'#ffddcc');
+ // hair fringe
+ ctx.fillStyle='#513674';ctx.beginPath();ctx.moveTo(-13,8);ctx.lineTo(-11,-2);ctx.lineTo(-3,2);ctx.lineTo(2,-4);ctx.lineTo(12,2);ctx.lineTo(14,10);ctx.lineTo(5,7);ctx.lineTo(0,12);ctx.lineTo(-5,7);ctx.closePath();ctx.fill();
+ // eyes
+ ellipse(-5,12,2.5,4,'#6156ce');ellipse(5,12,2.5,4,'#6156ce');ellipse(-5.5,10.6,1,1.3,'white');ellipse(4.5,10.6,1,1.3,'white');
+ // blush + hair star
+ ellipse(-8,17,2,1,'#f5a1ab');ellipse(8,17,2,1,'#f5a1ab');ctx.fillStyle='#ffe79a';ctx.font='bold 12px sans-serif';ctx.fillText('✦',-5,1);
+ // tunic
+ ctx.fillStyle='#f179b7';ctx.beginPath();ctx.moveTo(-10,22);ctx.lineTo(10,22);ctx.lineTo(13,36);ctx.lineTo(-13,36);ctx.closePath();ctx.fill();ctx.fillStyle='#fff0a4';ctx.fillRect(-3,25,6,7);ctx.restore()}
+function drawGoal(){const x=goal.x-camera,y=groundY()-83;if(x<-40||x>W+60)return;rect(x,y,6,83,'#fff0ab');ctx.fillStyle='#ff80bd';ctx.beginPath();ctx.moveTo(x+6,y+3);ctx.lineTo(x+48,y+16);ctx.lineTo(x+6,y+30);ctx.closePath();ctx.fill();ctx.fillStyle='#fff2b2';ctx.font='30px sans-serif';ctx.fillText('✦',x-11,y-7)}
+function overlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function update(dt){if(!running)return;clock+=dt;const oldY=player.y;
+ player.vx=((keys.right?1:0)-(keys.left?1:0))*235;if(player.vx)player.face=Math.sign(player.vx);player.x=Math.max(0,Math.min(WORLD-player.w,player.x+player.vx*dt));
+ if(jumpQueued&&player.grounded){player.vy=-525;player.grounded=false}jumpQueued=false;player.vy=Math.min(850,player.vy+1450*dt);player.y+=player.vy*dt;player.grounded=false;
+ for(const p of platforms){const py=platY(p);if(player.x+player.w>p.x&&player.x<p.x+p.w&&oldY+player.h<=py+7&&player.y+player.h>=py&&player.vy>=0){player.y=py-player.h;player.vy=0;player.grounded=true}}
+ // moving cloud monsters
+ for(const e of enemies){if(!e.alive)continue;e.x+=e.dir*65*dt;if(e.x<e.min||e.x>e.max)e.dir*=-1;const ex={x:e.x-14,y:groundY()-e.lift-27,w:28,h:27};const px={x:player.x+3,y:player.y+3,w:player.w-6,h:player.h-4};if(overlap(px,ex)&&player.invuln<=0){if(player.vy>80&&oldY+player.h<ex.y+19){e.alive=false;player.vy=-315;score+=2;updateHUD()}else{lives--;player.invuln=1.25;player.vy=-300;player.x=checkpoint;player.y=groundY()-player.h-8;updateHUD();if(lives<=0){showPanel('PETUALANGAN BERAKHIR','Kamu mengumpulkan '+score+' koin. Tarik napas, lalu coba lagi untuk mencapai gerbang bintang!','COBA LAGI ↻');return}}}}
+ for(const c of coins){if(c.taken)continue;const cy=groundY()-c.lift-27+Math.sin(clock*4+c.phase)*3;const dx=player.x+player.w/2-c.x,dy=player.y+player.h/2-cy;if(Math.hypot(dx,dy)<25){c.taken=true;score++;updateHUD()}}
+ if(player.x>1500)checkpoint=1548;
+ if(player.invuln>0)player.invuln=Math.max(0,player.invuln-dt);
+ if(player.y>H+90){lives--;updateHUD();if(lives<=0){showPanel('WAKTU PETUALANGAN HABIS','Koin terkumpul: '+score+'. Coba lagi dan perhatikan celah di antara pulau!','COBA LAGI ↻');return}player.x=checkpoint;player.y=groundY()-player.h-12;player.vy=0;player.invuln=1.3}
+ if(player.x+player.w>goal.x&&player.y+player.h>groundY()-90){showPanel('KAMU BERHASIL! ✨','Hebat! Kamu mencapai gerbang bintang dengan '+score+' koin. Petualangan anime-mu sukses!','MAIN LAGI ↻');return}
+ camera=Math.max(0,Math.min(WORLD-W,player.x-W*.36));
+}
+function draw(){drawBackground();for(const p of platforms)drawPlatform(p);for(const c of coins)drawCoin(c);for(const e of enemies)drawEnemy(e);drawGoal();drawPlayer();}
+function loop(t){const dt=Math.min((t-(lastTime||t))/1000,.032);lastTime=t;update(dt);draw();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+function bindHold(id,key){const b=document.getElementById(id);const down=e=>{e.preventDefault();keys[key]=true;b.classList.add('pressed');if(b.setPointerCapture&&e.pointerId!==undefined){try{b.setPointerCapture(e.pointerId)}catch(_){}}};const up=e=>{e.preventDefault();keys[key]=false;b.classList.remove('pressed')};b.addEventListener('pointerdown',down);b.addEventListener('pointerup',up);b.addEventListener('pointercancel',up);b.addEventListener('lostpointercapture',up);b.addEventListener('contextmenu',e=>e.preventDefault())}
+bindHold('left','left');bindHold('right','right');
+const jumpBtn=document.getElementById('jump');jumpBtn.addEventListener('pointerdown',e=>{e.preventDefault();jumpQueued=true;jumpBtn.classList.add('pressed');try{jumpBtn.setPointerCapture(e.pointerId)}catch(_){}});const releaseJump=e=>{e.preventDefault();jumpBtn.classList.remove('pressed')};jumpBtn.addEventListener('pointerup',releaseJump);jumpBtn.addEventListener('pointercancel',releaseJump);jumpBtn.addEventListener('lostpointercapture',releaseJump);jumpBtn.addEventListener('contextmenu',e=>e.preventDefault());
+addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','ArrowUp',' ','a','d','w','A','D','W'].includes(e.key))e.preventDefault();if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A')keys.left=true;if(e.key==='ArrowRight'||e.key==='d'||e.key==='D')keys.right=true;if(e.key==='ArrowUp'||e.key==='w'||e.key==='W'||e.key===' ')jumpQueued=true;if(e.key==='Escape'&&running)showPanel('JEDA SEBENTAR ✨','Tekan tombol di bawah untuk memulai ulang petualangan.','MULAI LAGI ▶')});
+addEventListener('keyup',e=>{if(e.key==='ArrowLeft'||e.key==='a'||e.key==='A')keys.left=false;if(e.key==='ArrowRight'||e.key==='d'||e.key==='D')keys.right=false});
+// Start screen: draw a small preview scene before gameplay begins.
+player.y=groundY()-player.h;enemies=enemyDefs.map(e=>({...e,alive:true,dir:1}));updateHUD();
+})();
+</script>
+</body>
+</html>
