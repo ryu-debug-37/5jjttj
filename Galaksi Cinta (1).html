@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Galaksi Cinta</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+        .pointer-events-auto { pointer-events: auto; }
+        .glass-card { background: rgba(20, 0, 10, 0.6); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 105, 180, 0.4); box-shadow: 0 0 20px rgba(255, 20, 147, 0.5); }
+        .fade-in { animation: fadeIn 0.8s ease-out forwards; }
+        .fade-out { animation: fadeOut 1s ease-in forwards; pointer-events: none; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes fadeOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(1.1); visibility: hidden; } }
+    </style>
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+    </script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="ui-layer">
+        <div id="welcome-screen" class="glass-card pointer-events-auto rounded-3xl p-8 max-w-sm w-11/12 text-center fade-in">
+            <h1 class="text-3xl font-bold mb-2 text-pink-200">Sebuah Galaksi<br>Cinta Untukmu</h1>
+            <div class="text-5xl my-4">💖 ☁️</div>
+            <p class="text-xs tracking-widest uppercase mb-8 text-pink-300">Selamat Ulang Tahun, Sayangku</p>
+            <button id="enter-btn" class="bg-pink-600 hover:bg-pink-500 text-white font-bold py-3 px-6 rounded-full w-full transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(236,72,153,0.9)] text-sm tracking-wider"> MASUK KE ALAM SEMESTA KITA </button>
+        </div>
+        <div id="info-modal" class="glass-card pointer-events-auto rounded-3xl p-6 max-w-xs w-11/12 text-center hidden absolute">
+            <div id="modal-img" class="text-6xl mb-4">👩‍❤️‍👨</div>
+            <h2 id="modal-title" class="text-2xl font-bold mb-2 text-pink-200">Cinta Terbesarku</h2>
+            <p id="modal-desc" class="text-sm text-gray-300 mb-6">Makin banyak waktu yang kita habiskan, makin aku mencintaimu.</p>
+            <button id="close-modal-btn" class="bg-transparent border border-pink-500 text-pink-400 hover:bg-pink-900 font-bold py-2 px-6 rounded-full transition-all text-xs"> KEMBALI 🤍 </button>
+        </div>
+    </div>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000000, 0.008);
+        
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const startCamPos = new THREE.Vector3(0, 200, 250);
+        const targetCamPos = new THREE.Vector3(0, 30, 80);
+        camera.position.copy(startCamPos);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+        
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enabled = false;
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.8;
+        controls.maxDistance = 200;
+        controls.minDistance = 35;
+        controls.maxPolarAngle = Math.PI / 2 + 0.1;
+        controls.target.set(0, 15, 0);
+        
+        const pCanvas = document.createElement('canvas');
+        pCanvas.width = 64;
+        pCanvas.height = 64;
+        const pCtx = pCanvas.getContext('2d');
+        const pGradient = pCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        pGradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+        pGradient.addColorStop(0.35, 'rgba(255, 255, 255, 0.9)');
+        pGradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.25)');
+        pGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        pCtx.fillStyle = pGradient;
+        pCtx.fillRect(0, 0, 64, 64);
+        const particleTexture = new THREE.CanvasTexture(pCanvas);
+        particleTexture.colorSpace = THREE.SRGBColorSpace;
+        
+        const galaxyGeometry = new THREE.BufferGeometry();
+        const galaxyCount = 25000;
+        const posArray = new Float32Array(galaxyCount * 3);
+        const colorsArray = new Float32Array(galaxyCount * 3);
+        // Warna pekat & jenuh (bukan pastel) supaya kalau numpuk tidak jadi putih
+        const colorInside = new THREE.Color(0xd9003a);
+        const colorMid = new THREE.Color(0xff1f8e);
+        const colorOutside = new THREE.Color(0xff5fb0);
+        const sparkleColor = new THREE.Color(0xffc2e0);
+        
+        for(let i = 0; i < galaxyCount * 3; i+=3) {
+            // Memberikan pusat ruang kosong (black hole) dan mengelompokkan ke tengah
+            const radius = Math.pow(Math.random(), 2) * 55 + 3;
+            const spinAngle = radius * 0.4;
+            const branchAngle = ((i / 3) % 4) * ((Math.PI * 2) / 4);
+            
+            // Mengurangi sebaran agar spiral lebih tajam
+            const spread = 2.0;
+            const randomX = Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1) * spread * (radius/10);
+            const randomY = Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1) * spread * (radius/15);
+            const randomZ = Math.pow(Math.random(), 3) * (Math.random() < 0.5 ? 1 : -1) * spread * (radius/10);
+            
+            posArray[i] = Math.cos(branchAngle + spinAngle) * radius + randomX;
+            posArray[i+1] = randomY * (1 - (radius/65));
+            posArray[i+2] = Math.sin(branchAngle + spinAngle) * radius + randomZ;
+            
+            const t = radius / 58;
+            const mixedColor = t < 0.5
+                ? colorInside.clone().lerp(colorMid, t * 2)
+                : colorMid.clone().lerp(colorOutside, (t - 0.5) * 2);
+            // sebagian kecil partikel dibuat lebih terang sebagai "bintang" (kontras)
+            if (Math.random() < 0.03) mixedColor.copy(sparkleColor);
+            else mixedColor.multiplyScalar(0.55 + Math.random() * 0.3);
+            colorsArray[i] = mixedColor.r;
+            colorsArray[i+1] = mixedColor.g;
+            colorsArray[i+2] = mixedColor.b;
+        }
+        
+        galaxyGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        galaxyGeometry.setAttribute('color', new THREE.BufferAttribute(colorsArray, 3));
+        
+        const particleMaterial = new THREE.PointsMaterial({ 
+            size: 0.5,
+            vertexColors: true, 
+            blending: THREE.AdditiveBlending, 
+            transparent: true, 
+            opacity: 0.9,
+            depthWrite: false,
+            alphaTest: 0.04, // buang piksel transparan -> tidak ada kotak
+            fog: false,
+            map: particleTexture
+        });
+        const galaxy = new THREE.Points(galaxyGeometry, particleMaterial);
+        scene.add(galaxy);
+        
+        const heartGeometry = new THREE.BufferGeometry();
+        const heartCount = 11000;
+        const heartPos = new Float32Array(heartCount * 3);
+        const heartCol = new Float32Array(heartCount * 3);
+        const heartEdge = new THREE.Color(0xff2d8f);
+        const heartFill = new THREE.Color(0xc4005c);
+        
+        for (let i = 0; i < heartCount; i++) {
+            const t = Math.random() * Math.PI * 2;
+            let x = 16 * Math.pow(Math.sin(t), 3);
+            let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+            
+            // 70% di garis tepi (outline tegas), 30% isi hati yang lebih redup
+            const isEdge = Math.random() < 0.7;
+            const k = isEdge ? 1 : Math.sqrt(Math.random()) * 0.92;
+            const jitter = isEdge ? 0.5 : 0.8;
+            const dx = (Math.random() - 0.5) * jitter;
+            const dy = (Math.random() - 0.5) * jitter;
+            const dz = (Math.random() - 0.5) * 1.6;
+            
+            heartPos[i*3] = (x * 0.9 * k) + dx;
+            heartPos[i*3+1] = ((y - 2) * 0.9 * k) + 22 + dy;
+            heartPos[i*3+2] = dz;
+            
+            const c = (isEdge ? heartEdge : heartFill).clone().multiplyScalar(0.6 + Math.random() * 0.4);
+            heartCol[i*3] = c.r;
+            heartCol[i*3+1] = c.g;
+            heartCol[i*3+2] = c.b;
+        }
+        
+        heartGeometry.setAttribute('position', new THREE.BufferAttribute(heartPos, 3));
+        heartGeometry.setAttribute('color', new THREE.BufferAttribute(heartCol, 3));
+        const heartMaterial = new THREE.PointsMaterial({ 
+            size: 0.5, 
+            vertexColors: true,
+            blending: THREE.AdditiveBlending, 
+            transparent: true, 
+            opacity: 0.9, 
+            depthWrite: false,
+            alphaTest: 0.04,
+            fog: false,
+            map: particleTexture
+        });
+        const heart = new THREE.Points(heartGeometry, heartMaterial);
+        scene.add(heart);
+        
+        function createTextSprite(message, isIcon = false) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = isIcon ? 256 : 1024;
+            canvas.height = isIcon ? 256 : 256;
+            
+            // Background canvas transparan penuh
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            context.textAlign = "center";
+            context.textBaseline = "middle";
+            
+            if (isIcon) {
+                context.font = "150px Arial";
+                context.fillText(message, canvas.width / 2, canvas.height / 2);
+            } else {
+                // Font tebal, otomatis mengecil kalau teks kepanjangan
+                let fontSize = 96;
+                context.font = `900 ${fontSize}px 'Segoe UI', Arial, sans-serif`;
+                while (context.measureText(message).width > canvas.width - 80 && fontSize > 30) {
+                    fontSize -= 4;
+                    context.font = `900 ${fontSize}px 'Segoe UI', Arial, sans-serif`;
+                }
+                const cx = canvas.width / 2, cy = canvas.height / 2;
+                context.lineJoin = "round";
+                
+                // 1) glow pink di belakang
+                context.shadowColor = "#ff1493";
+                context.shadowBlur = 28;
+                context.lineWidth = 14;
+                context.strokeStyle = "rgba(255, 20, 147, 0.9)";
+                context.strokeText(message, cx, cy);
+                
+                // 2) outline gelap supaya huruf kontras dengan latar pink
+                context.shadowBlur = 0;
+                context.lineWidth = 10;
+                context.strokeStyle = "#4a0028";
+                context.strokeText(message, cx, cy);
+                
+                // 3) isi teks putih-pink terang
+                context.fillStyle = "#fff4fa";
+                context.fillText(message, cx, cy);
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.anisotropy = 4;
+            const material = new THREE.SpriteMaterial({ 
+                map: texture, 
+                transparent: true,
+                depthWrite: false,
+                depthTest: false,        // teks selalu di depan partikel, tidak tertutup
+                alphaTest: 0.05,         // buang piksel transparan -> kotak hitam hilang
+                fog: false,
+                blending: THREE.NormalBlending // normal, bukan additive, biar warna teks tidak pudar
+            });
+            const sprite = new THREE.Sprite(material);
+            sprite.renderOrder = 10;
+            if (isIcon) sprite.scale.set(10, 10, 1);
+            else sprite.scale.set(36, 9, 1);
+            return sprite;
+        }
+        
+        const floatingObjects = [];
+        const orbitRadius = 32;
+        const interactiveItems = [
+            { type: 'text', text: "SELAMAT ULANG TAHUN" },
+            { type: 'icon', text: "🐶", title: "Untukmu", desc: "Setiap detiknya terasa lebih indah karena kamu ada." },
+            { type: 'text', text: "CINTA ABADI KITA" },
+            { type: 'icon', text: "👩‍❤️‍👨", title: "Cinta Hidupku", desc: "Makin banyak waktu berlalu, makin besar cintaku padamu." },
+            { type: 'text', text: "KAMU LUAR BIASA" },
+            { type: 'icon', text: "✨", title: "Selamanya", desc: "Setiap detik bersamamu adalah sebuah keajaiban." },
+            { type: 'text', text: "AKU SAYANG KAMU" }
+        ];
+        
+        const groupItems = new THREE.Group();
+        groupItems.position.y = 5;
+        
+        interactiveItems.forEach((item, index) => {
+            const angle = (index / interactiveItems.length) * Math.PI * 2;
+            const isIcon = item.type === 'icon';
+            const sprite = createTextSprite(item.text, isIcon);
+            sprite.position.x = Math.cos(angle) * orbitRadius;
+            sprite.position.y = Math.sin(angle * 2) * 3;
+            sprite.position.z = Math.sin(angle) * orbitRadius;
+            if (isIcon) {
+                sprite.userData = { clickable: true, title: item.title, desc: item.desc, emoji: item.text };
+                floatingObjects.push(sprite);
+            }
+            groupItems.add(sprite);
+        });
+        scene.add(groupItems);
+        
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        // Deteksi klik berbasis layar: ikon terdekat dari titik sentuh (radius 70px).
+        // Lebih gampang kena di HP daripada raycast ke sprite kecil.
+        const _wp = new THREE.Vector3();
+        function onPointerDown(event) {
+            if (!controls.enabled) return;
+            if (!infoModal.classList.contains('hidden')) return; // modal sedang terbuka
+            const x = event.clientX, y = event.clientY;
+            if (x === undefined || y === undefined) return;
+            let best = null, bestDist = Infinity;
+            floatingObjects.forEach(obj => {
+                obj.getWorldPosition(_wp);
+                _wp.project(camera);
+                if (_wp.z > 1) return; // di belakang kamera
+                const sx = (_wp.x + 1) / 2 * window.innerWidth;
+                const sy = (1 - _wp.y) / 2 * window.innerHeight;
+                const d = Math.hypot(sx - x, sy - y);
+                if (d < bestDist) { bestDist = d; best = obj; }
+            });
+            if (best && bestDist < 70) showModal(best.userData);
+        }
+        
+        renderer.domElement.addEventListener('pointerdown', onPointerDown);
+        
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const enterBtn = document.getElementById('enter-btn');
+        const infoModal = document.getElementById('info-modal');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        let isIntroPlaying = false;
+        
+        enterBtn.addEventListener('click', () => {
+            welcomeScreen.classList.replace('fade-in', 'fade-out');
+            isIntroPlaying = true;
+        });
+        
+        function showModal(data) {
+            document.getElementById('modal-img').innerText = data.emoji;
+            document.getElementById('modal-title').innerText = data.title;
+            document.getElementById('modal-desc').innerText = data.desc;
+            infoModal.classList.remove('hidden');
+            infoModal.classList.add('fade-in');
+            controls.autoRotate = false;
+        }
+        
+        closeModalBtn.addEventListener('click', () => {
+            infoModal.classList.remove('fade-in');
+            infoModal.classList.add('hidden');
+            controls.autoRotate = true;
+        });
+        
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            const elapsedTime = clock.getElapsedTime();
+            galaxy.rotation.y = elapsedTime * 0.08;
+            groupItems.rotation.y = -elapsedTime * 0.12;
+            const scale = 1 + Math.sin(elapsedTime * 4) * 0.05;
+            heart.scale.set(scale, scale, scale);
+            
+            if (isIntroPlaying) {
+                camera.position.lerp(targetCamPos, 0.03);
+                camera.lookAt(0, 15, 0);
+                if (camera.position.distanceTo(targetCamPos) < 1.5) { isIntroPlaying = false; controls.enabled = true; }
+            } else { 
+                controls.update(); 
+            }
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
